@@ -68,12 +68,9 @@ tr:nth-child(even) td{background:#fafbfd}
   <input id="lemail" type="email" placeholder="nama@unpar.ac.id">
   <label style="text-align:left">Hak akses (mode demo)</label>
   <select id="lrole">
-   <option value="user">User (mahasiswa/dosen)</option>
-   <option value="admin:PP">Admin Lab Proses Produksi</option>
-   <option value="admin:EPSK">Admin Lab EPSK</option>
-   <option value="admin:PSTI">Admin Lab PSTI</option>
-   <option value="admin:STAT">Admin Lab Statistika</option>
-   <option value="super">Super Admin</option>
+   <option value="mahasiswa">Mahasiswa</option>
+   <option value="dosen">Dosen</option>
+   <option value="laboran">Laboran</option>
   </select>
   <button class="btn" style="width:100%;margin-top:14px" onclick="doLogin()">Login dengan Google UNPAR</button>
   <div class="err" id="lerr"></div>
@@ -129,9 +126,10 @@ let ME=load('ul_me',null);
 const saveAll=()=>{save('ul_items',ITEMS);save('ul_loans',LOANS);save('ul_logs',LOGS)};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const labName=id=>LABS.find(l=>l.id===id)?.name||id;
-const isSuper=()=>ME.role==='super';
-const canManage=lab=>isSuper()||(ME.role==='admin'&&ME.lab===lab);
-const isAdmin=()=>ME.role==='admin'||ME.role==='super';
+const ROLE_LABEL={mahasiswa:'Mahasiswa',dosen:'Dosen',laboran:'Laboran'};
+const isLaboran=()=>ME.role==='laboran';
+const canManage=lab=>isLaboran(); /* hanya Laboran (1 peran, semua lab); Mahasiswa & Dosen read-only */
+const isAdmin=isLaboran;
 function log(a,item,d){LOGS.unshift({t:new Date().toISOString(),by:ME.email,a,item,d});LOGS=LOGS.slice(0,300);saveAll()}
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
 function status(i){if(i.cond==='Perawatan')return['Perawatan','b-y'];if(i.avail<=0)return['Dipinjam','b-r'];return['Tersedia','b-g']}
@@ -144,13 +142,13 @@ function doLogin(){
  if(!/^[^\s@]+@unpar\.ac\.id$/.test(email)){err.textContent='Akses ditolak: gunakan email resmi @unpar.ac.id.';return}
  const r=document.getElementById('lrole').value;
  const name=email.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
- ME={email,name,role:r==='user'?'user':r==='super'?'super':'admin',lab:r.startsWith('admin:')?r.split(':')[1]:null};
+ ME={email,name,role:r,lab:null};
  save('ul_me',ME);start();
 }
 function logout(){ME=null;try{localStorage.removeItem('ul_me')}catch(e){}document.getElementById('app').style.display='none';document.getElementById('login').style.display='flex'}
 function start(){
  document.getElementById('login').style.display='none';document.getElementById('app').style.display='block';
- document.getElementById('hname').textContent=ME.name;document.getElementById('hmail').textContent=ME.email+' · '+(ME.role==='super'?'Super Admin':ME.role==='admin'?'Admin '+labName(ME.lab):'User');
+ document.getElementById('hname').textContent=ME.name;document.getElementById('hmail').textContent=ME.email+' · '+ROLE_LABEL[ME.role];
  document.getElementById('hav').textContent=ME.name[0];
  const m=[['dashboard','🏠 Dashboard'],['labs','🧪 Daftar Laboratorium'],['inv','📦 Inventaris'],['borrow','📝 Peminjaman Alat'],['history','🕘 Riwayat Peminjaman'],['report','📈 Laporan']];
  if(isAdmin())m.push(['logs','🗂️ Log Aktivitas']);
@@ -296,7 +294,7 @@ function submitBorrow(){
 }
 const LS={'Menunggu Persetujuan':'b-y','Disetujui':'b-b','Ditolak':'b-r','Sedang Dipinjam':'b-b','Menunggu Pengembalian':'b-y','Selesai':'b-g','Terlambat':'b-r'};
 function refreshLate(){const t=new Date().toISOString().slice(0,10);LOANS.forEach(l=>{if(['Sedang Dipinjam','Menunggu Pengembalian'].includes(l.status)&&l.d2<t)l.status='Terlambat'})}
-function visibleLoans(){refreshLate();return LOANS.filter(l=>isSuper()||(ME.role==='admin'&&l.lab===ME.lab)||l.email===ME.email)}
+function visibleLoans(){refreshLate();return LOANS.filter(l=>isLaboran()||l.email===ME.email)}
 function vHist(v){
  const rows=visibleLoans();
  v.innerHTML=`<h2>Riwayat Peminjaman</h2><div class="tools noprint"><button class="btn sec" onclick="dl('riwayat_peminjaman.csv',[['No Transaksi','Peminjam','Email','Lab','Barang','Jumlah','Tgl Pinjam','Tgl Kembali','Tujuan','Status'],...visibleLoans().map(l=>[l.no,l.name,l.email,labName(l.lab),l.itemName,l.qty,l.d1,l.d2,l.goal,l.status])])">⬇ Export Excel</button></div>
@@ -328,7 +326,7 @@ function giveBack(no){
 /* ============ LAPORAN & LOG ============ */
 function vReport(v){
  const cnt=(arr,fn)=>arr.reduce((m,x)=>{const k=fn(x);m[k]=(m[k]||0)+1;return m},{});
- const items=isSuper()?ITEMS:ME.role==='admin'?ITEMS.filter(i=>i.lab===ME.lab):ITEMS;
+ const items=ITEMS;
  const tbl=(t,o)=>`<div class="card"><b>${t}</b><table style="min-width:0;margin-top:8px">${Object.entries(o).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table></div>`;
  const labs={};LABS.forEach(l=>{const s=labStats(l.id);labs[l.name]=s.types+' jenis / '+s.total+' unit / '+s.avail+' tersedia'});
  const pop={};LOANS.forEach(l=>pop[l.itemName]=(pop[l.itemName]||0)+l.qty);
@@ -339,7 +337,7 @@ function vLogs(v){
  v.innerHTML=`<h2>Log Aktivitas Admin</h2><div class="tw"><table><thead><tr><th>Waktu</th><th>Pengguna</th><th>Aktivitas</th><th>Objek</th><th>Detail</th></tr></thead><tbody>${LOGS.map(l=>`<tr><td>${new Date(l.t).toLocaleString('id-ID')}</td><td>${esc(l.by)}</td><td>${esc(l.a)}</td><td>${esc(l.item)}</td><td>${esc(l.d)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--gray)">Belum ada aktivitas.</td></tr>'}</tbody></table></div>`;
 }
 
-if(ME&&/@unpar\.ac\.id$/.test(ME.email))start();
+if(ME&&/@unpar\.ac\.id$/.test(ME.email)&&ROLE_LABEL[ME.role])start();else if(ME){ME=null;try{localStorage.removeItem('ul_me')}catch(e){}}
 </script>
 </body>
 </html>
